@@ -3,6 +3,7 @@ import json
 import re
 import time
 import os
+import fractions
 
 
 class Beat(object):
@@ -12,7 +13,7 @@ class Beat(object):
         self.c = c
 
     def __str__(self):
-        return "[" + str(self.a) + "," + str(self.b) + "," + str(self.c) + "]"
+        return f"[{str(self.a)}, {str(self.b)}, {str(self.c)}]"
 
     def reduction(self):
         while self.b >= self.c:
@@ -23,12 +24,9 @@ class Beat(object):
             self.b += self.c
         if self.b == 0:
             self.c = 1
-        i = 2
-        while i <= self.b:
-            while self.b % i == 0 and self.c % i == 0:
-                self.b //= i
-                self.c //= i
-            i += 1
+        fraction = fractions.Fraction(self.b, self.c)
+        self.b = fraction.numerator
+        self.c = fraction.denominator
         return self
 
     def __iadd__(self, beat_2):
@@ -70,8 +68,8 @@ class Beat(object):
 
 class Note(object):
     def __init__(self):
-        self.start = 0
-        self.end = 0
+        self.start = 0.0
+        self.end = 0.0
         self.column = 0
         self.hitsound = ""
         self.volumn = 0
@@ -94,6 +92,7 @@ class ManiaMap(object):
         self.artist_unicode = None
         self.creator = None
         self.version = None
+        self.background = None
         self.key_amount = 0
         self.notes = []
         self.bpms = []
@@ -106,16 +105,18 @@ match_note = r"[\t ]*(.+?)[\t ]*,[\t ]*(.+?)[\t ]*,[\t ]*(.+?)[\t ]*,[\t ]*(.+?)
 match_hitsound = r"(?:.+:)*(.+):(.*)"
 
 
-def accu_bpm(bpm: float, precision: int = 0.001, limit: int = 8):
+def accu_bpm(bpm: float, precision: float = 0.001, limit: int = 8):
+    origin_bpm = bpm
     for i in range(0, limit):
         if abs(bpm - int(bpm + 0.5)) < precision:
             return int(bpm) / (10 ** i)
         bpm *= 10.0
+    return origin_bpm
 
 
-def time2beat(time: int, millseconds_per_beat: float, max_error: int = 1):
+def time2beat(time: float, millseconds_per_beat: float, max_error: float = 1.0):
     a = 0
-    t = float(time)
+    t = time
     while t > millseconds_per_beat:
         t -= millseconds_per_beat
         a += 1
@@ -126,13 +127,13 @@ def time2beat(time: int, millseconds_per_beat: float, max_error: int = 1):
     b = 1
     c = 2
     r = b / c * millseconds_per_beat
-    while abs(t - r) > max_error:
+    while abs(t - r) >= max_error:
         b += 1
         if b == c:
             b = 1
             c += 1
         r = b / c * millseconds_per_beat
-    return Beat(a, b, c)
+    return Beat(a, b, c).reduction()
 
 
 def beat2time(beat: Beat, millseconds_per_beat: float):
@@ -140,7 +141,7 @@ def beat2time(beat: Beat, millseconds_per_beat: float):
 
 
 def parse_osu(filename):
-    file = open(filename, "r")
+    file = open(filename, "r", encoding="utf-8")
     map = ManiaMap()
     section = None
     previous_bpm = 0.0
@@ -181,14 +182,15 @@ def parse_osu(filename):
             matched = re.match(match_bpm, line)
             if matched:
                 bpm = BPM()
-                bpm.time = int(matched.group(1))
+                bpm.time = float(matched.group(1))
                 bpm.bpm = float(matched.group(2))
                 if bpm.bpm > 0:
                     bpm.bpm = 60000.0 / bpm.bpm
+                    bpm.bpm = accu_bpm(bpm.bpm)
+                    previous_bpm = bpm.bpm
                 else:
                     bpm.bpm = -previous_bpm * 100.0 / bpm.bpm
-                bpm.bpm = accu_bpm(bpm.bpm)
-                previous_bpm = bpm.bpm
+                    bpm.bpm = accu_bpm(bpm.bpm)
                 map.bpms.append(bpm)
             continue
         if section == "HitObjects":
@@ -196,22 +198,22 @@ def parse_osu(filename):
             if matched:
                 note = Note()
                 note.column = int(int(matched.group(1)) / 512 * map.key_amount)
-                note.start = int(matched.group(3))
-                note.end = int(matched.group(6))
+                note.start = float(matched.group(3))
+                note.end = float(matched.group(6))
                 extras = matched.group(7)
                 extra_matched = re.match(match_hitsound, extras)
                 if extra_matched:
                     hitsound_file = extra_matched.group(2)
                     if len(hitsound_file) > 0:
                         note.hitsound = hitsound_file
-                        note.volumn = int(extra_matched.group(1))
+                        note.volumn = float(extra_matched.group(1))
                 map.notes.append(note)
     file.close()
     return map
 
 
 def parse_mc(filename):
-    file = open(filename, "r")
+    file = open(filename, "r", encoding="utf-8")
     map = ManiaMap()
     json_datas = file.read()
     mc_map = json.loads(json_datas)
@@ -224,7 +226,7 @@ def parse_mc(filename):
     map.title = mc_map["meta"]["song"]["title"]
     map.title_unicode = mc_map["meta"]["song"]["title"]
     map.version = mc_map["meta"]["version"]
-    time_start = 0
+    time_start = 0.0
     audio = ""
     note_special = mc_map["note"][0]
     if note_special.get("type", 0) == 1:
@@ -248,8 +250,8 @@ def parse_mc(filename):
     for mc_bpm in mc_map["time"]:
         bpm = BPM()
         beat = Beat(*mc_bpm["beat"])
-        bpm.time = int(
-            previous_time + beat2time(beat - previous_beat, 60000.0 / previous_bpm)
+        bpm.time = previous_time + beat2time(
+            beat - previous_beat, 60000.0 / previous_bpm
         )
         bpm.bpm = mc_bpm["bpm"]
         bpms.append(bpm)
@@ -281,7 +283,7 @@ def parse_mc(filename):
         previous_bpm_beat = Beat(*mc_map["time"][previous_bpm_index]["beat"])
         note = Note()
         note.column = column
-        note.start = int(
+        note.start = (
             beat2time(
                 note_beat - previous_bpm_beat, 60000.0 / bpms[previous_bpm_index].bpm
             )
@@ -297,7 +299,7 @@ def parse_mc(filename):
                 temp_next_bpm_beat = Beat(*mc_map["time"][temp_next_bpm_index]["beat"])
                 if end_beat >= temp_next_bpm_beat:
                     temp_previous_bpm_beat = Beat(
-                        *mc_map["time"][previous_bpm_index]["beat"]
+                        *mc_map["time"][temp_previous_bpm_index]["beat"]
                     )
                     temp_previous_time += beat2time(
                         temp_next_bpm_beat - temp_previous_bpm_beat,
@@ -310,7 +312,7 @@ def parse_mc(filename):
             temp_previous_bpm_beat = Beat(
                 *mc_map["time"][temp_previous_bpm_index]["beat"]
             )
-            note.end = int(
+            note.end = (
                 beat2time(
                     end_beat - temp_previous_bpm_beat,
                     60000.0 / bpms[temp_previous_bpm_index].bpm,
@@ -328,8 +330,8 @@ def parse_mc(filename):
 
 
 def write_osu(map: ManiaMap, filename):
-    file = open(filename, "w")
-    osu_data_file = open("osu_base.txt", "r")
+    file = open(filename, "w", encoding="utf-8")
+    osu_data_file = open("osu_base.txt", "r", encoding="utf-8")
     osu_datas = osu_data_file.read()
     osu_data_file.close()
     osu_datas = osu_datas.format(
@@ -348,41 +350,23 @@ def write_osu(map: ManiaMap, filename):
     file.write(osu_datas)
     file.write("\n[TimingPoints]\n")
     for bpm in map.bpms:
-        file.write(str(bpm.time) + "," + str(60000.0 / bpm.bpm) + ",4,1,1,100,1,0\n")
+        file.write(f"{str(int(bpm.time))},{str(60000.0 / bpm.bpm)},4,1,1,100,1,0\n")
     file.write("\n\n\n[HitObjects]\n")
     column_width = 512 / map.key_amount
     for note in map.notes:
         if note.end > note.start:
             file.write(
-                str(int(note.column * column_width + column_width * 0.5))
-                + ",192,"
-                + str(note.start)
-                + ",128,0,"
-                + str(note.end)
-                + ":0:0:0:"
-                + str(note.volumn)
-                + ":"
-                + str(note.hitsound)
-                + "\n"
+                f"{str(int(note.column * column_width + column_width * 0.5))},192,{str(int(note.start))},128,0,{str(int(note.end))}:0:0:0:{str(int(note.volumn))}:{str(note.hitsound)}\n"
             )
         else:
             file.write(
-                str(int(note.column * column_width + column_width * 0.5))
-                + ",192,"
-                + str(note.start)
-                + ",1,0,"
-                + str(note.end)
-                + ":0:0:"
-                + str(note.volumn)
-                + ":"
-                + str(note.hitsound)
-                + "\n"
+                f"{str(int(note.column * column_width + column_width * 0.5))},192,{str(int(note.start))},1,0,{str(int(note.end))}:0:0:{str(int(note.volumn))}:{str(note.hitsound)}\n"
             )
     file.flush()
 
 
 def write_mc(map: ManiaMap, filename):
-    file = open(filename, "w")
+    file = open(filename, "w", encoding="utf-8")
     mc = dict()
     mc["meta"] = dict()
     mc["meta"]["creator"] = map.creator
@@ -463,7 +447,7 @@ def write_mc(map: ManiaMap, filename):
     mc["extra"] = {
         "test": {"divide": 4, "speed": 100, "save": 0, "lock": 0, "edit_mode": 0}
     }
-    strs = json.dumps(mc)
+    strs = json.dumps(mc, ensure_ascii=False, indent=4)
     file.write(strs)
     file.close()
 
@@ -483,9 +467,10 @@ def convert(filename):
         write_osu(parse_mc(filename), name + ".osu")
 
 
-for arg in sys.argv[1:]:
-    print("开始转换", arg)
+for index, arg in enumerate(sys.argv[1:]):
+    print(f'({str(index+1)}/{str(len(sys.argv)-1)}) Converting "{arg}"')
     convert(arg)
-    print(arg, "转换完成")
+    print("Complete~")
+
 os.system("pause")
 
