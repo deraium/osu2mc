@@ -14,7 +14,7 @@ def parse(filename):
     chart.creator = mc_chart["meta"]["creator"]
     chart.key_amount = mc_chart["meta"]["mode_ext"]["column"]
     chart.leadin = 0
-    chart.preview = mc_chart["meta"]["preview"]
+    chart.preview = mc_chart["meta"].get("preview", 0)
     chart.title = mc_chart["meta"]["song"]["title"]
     chart.title_unicode = mc_chart["meta"]["song"]["title"]
     chart.version = mc_chart["meta"]["version"]
@@ -103,7 +103,7 @@ def parse(filename):
             )
             note.end = (end_beat - temp_previous_bpm_beat).to_time(
                 60000.0 / bpms[temp_previous_bpm_index].bpm
-            )
+            ) + temp_previous_time
         hitsound = mc_note.get("sound", None)
         if hitsound != None:
             note.hitsound = hitsound
