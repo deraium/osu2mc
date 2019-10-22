@@ -8,7 +8,7 @@ match_note = r"[\t ]*(.+?)[\t ]*,[\t ]*(.+?)[\t ]*,[\t ]*(.+?)[\t ]*,[\t ]*(.+?)
 match_hitsound = r"(?:.+:)*(.+):(.*)"
 
 
-def parse(filename):
+def parse(filename, remove_green_line=False):
     file = open(filename, "r", encoding="utf-8")
     chart = mania.Chart()
     section = None
@@ -56,10 +56,21 @@ def parse(filename):
                     bpm.bpm = mania.accu_bpm(60000.0 / bpm.bpm)
                     previous_bpm = bpm.bpm
                     chart.bpms.append(bpm)
-                    chart.effects.append(mania.Effect(bpm.time))
+                    if not remove_green_line:
+                        chart.effects.append(mania.Effect(bpm.time))
                 else:
-                    effect = mania.Effect(bpm.time, -100.0 / bpm.bpm)
-                    chart.effects.append(effect)
+                    if remove_green_line:
+                        previous_bpm_index = len(chart.bpms) - 1
+                        if bpm.time == chart.bpms[previous_bpm_index].time:
+                            chart.bpms[previous_bpm_index].bpm = mania.accu_bpm(
+                                -100.0 / bpm.bpm * previous_bpm
+                            )
+                        else:
+                            bpm.bpm = mania.accu_bpm(-100.0 / bpm.bpm * previous_bpm)
+                            chart.bpms.append(bpm)
+                    else:
+                        effect = mania.Effect(bpm.time, -100.0 / bpm.bpm)
+                        chart.effects.append(effect)
             continue
         if section == "HitObjects":
             matched = re.match(match_note, line)
@@ -102,13 +113,18 @@ def write(chart: mania.Chart, filename):
     file.write("\n[TimingPoints]\n")
     osu_bpm_list = chart.bpms.copy()
     for effect in chart.effects:
-        osu_bpm_list.append(mania.BPM(effect.time, -100.0 / effect.scroll))
+        if effect.scroll > 0.0:
+            osu_bpm_list.append(mania.BPM(effect.time, -100.0 / effect.scroll))
+        else:
+            osu_bpm_list.append(mania.BPM(effect.time, -1000000))
     osu_bpm_list.sort(key=lambda x: x.time)
     for bpm in osu_bpm_list:
         if bpm.bpm > 0:
             file.write(f"{str(int(bpm.time))},{str(60000.0 / bpm.bpm)},4,1,1,100,1,0\n")
-        else:
+        elif bpm.bpm < 0:
             file.write(f"{str(int(bpm.time))},{str(bpm.bpm)},4,1,1,100,0,0\n")
+        else:
+            file.write(f"{str(int(bpm.time))},999999999,4,1,1,100,1,0\n")
     file.write("\n\n\n[HitObjects]\n")
     column_width = 512 / chart.key_amount
     for note in chart.notes:
