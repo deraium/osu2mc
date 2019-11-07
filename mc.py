@@ -107,7 +107,7 @@ def parse(filename):
         hitsound = mc_note.get("sound", None)
         if hitsound != None:
             note.hitsound = hitsound
-            note.volumn = mc_note.get("vol", 100)
+            note.volume = mc_note.get("vol", 100)
         notes.append(note)
     chart.notes = notes
     chart.audio = audio
@@ -230,7 +230,7 @@ def write(chart: mania.Chart, filename):
             new_note["endbeat"] = [e_beat.a, e_beat.b, e_beat.c]
         if len(note.hitsound) > 0:
             new_note["sound"] = note.hitsound
-            new_note["vol"] = note.volumn
+            new_note["vol"] = note.volume
         mc_note.append(new_note)
     mc_note.append(
         {

@@ -4,7 +4,7 @@ class Note(object):
         self.end = 0.0
         self.column = 0
         self.hitsound = ""
-        self.volumn = 0
+        self.volume = 0
 
 
 class BPM(object):

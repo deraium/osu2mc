@@ -85,7 +85,7 @@ def parse(filename, remove_green_line=False):
                     hitsound_file = extra_matched.group(2)
                     if len(hitsound_file) > 0:
                         note.hitsound = hitsound_file
-                        note.volumn = float(extra_matched.group(1))
+                        note.volume = float(extra_matched.group(1))
                 chart.notes.append(note)
     file.close()
     return chart
@@ -130,10 +130,10 @@ def write(chart: mania.Chart, filename):
     for note in chart.notes:
         if note.end > note.start:
             file.write(
-                f"{str(int(note.column * column_width + column_width * 0.5))},192,{str(int(note.start))},128,0,{str(int(note.end))}:0:0:0:{str(int(note.volumn))}:{str(note.hitsound)}\n"
+                f"{str(int(note.column * column_width + column_width * 0.5))},192,{str(int(note.start))},128,0,{str(int(note.end))}:0:0:0:{str(int(note.volume))}:{str(note.hitsound)}\n"
             )
         else:
             file.write(
-                f"{str(int(note.column * column_width + column_width * 0.5))},192,{str(int(note.start))},1,0,{str(int(note.end))}:0:0:{str(int(note.volumn))}:{str(note.hitsound)}\n"
+                f"{str(int(note.column * column_width + column_width * 0.5))},192,{str(int(note.start))},1,0,{str(int(note.end))}:0:0:{str(int(note.volume))}:{str(note.hitsound)}\n"
             )
     file.flush()
